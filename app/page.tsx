@@ -200,7 +200,7 @@ export default function Page() {
             <label>Building type</label>
             <select
               value={facility.type}
-              onChange={e => setFacility({ ...facility, type: e.target.value'type'] })}
+              onChange={e => setFacility({ ...facility, type: e.target.value })}
             >
               {['Office','Retail','Hotel','Hospital','School','Warehouse','Residential','Other'].map(t => <option key={t} value={t}>{t}</option>)}
             </select>
