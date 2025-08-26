@@ -1,45 +1,20 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { runAnalysis } from '../lib/api'
+import { runAnalysis} from '../lib/api';
+
 // ---------- helpers ----------
 function newSessionId() {
   try {
     const raw =
       (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
-        ? (crypto).randomUUID()
-        : `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+        ? (crypto).randomUUID(){Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     return `sess_${raw.replace(/[^a-zA-Z0-9]/g, '').slice(0, 24)}`;
   } catch {
     return `sess_${Date.now().toString(36)}`;
   }
 }
-
-// HVAC overview
-  hvac?: {
-    systemType?: 'DX' | 'Chilled Water' | 'VRF' | 'Package Units' | 'District Cooling' | 'Other';
-    chillerMakeModel?;
-    coolingCapacityTR?;
-    numChillers?;
-    boilersPresent?;
-    boilerFuel?: 'Gas' | 'Diesel' | 'Electric' | 'None' | 'Other';
-    ventilationControl?: 'CO2' | 'Schedule' | 'Manual' | 'BMS' | 'Other';
-  };
-
-  // Lighting overview
-  lighting?: {
-    predominant?: 'LED' | 'Fluorescent' | 'HID' | 'Incandescent' | 'Mixed' | 'Other';
-    controls?: ('Manual Switches' | 'Occupancy Sensors' | 'Daylight Sensors' | 'BMS' | 'Timer')[];
-  };
-
-  // Envelope overview
-  envelope?: {
-    glazing?: 'Single' | 'Double' | 'Triple' | 'Low‑E' | 'Other';
-    insulationLevel?: 'Low' | 'Medium' | 'High' | 'Unknown';
-    roofType?;
-  };
-};
 
 export default function Page() {
   // ---------- session (hydration‑safe) ----------
@@ -51,25 +26,51 @@ export default function Page() {
 
   // ---------- inputs ----------
   const [customer, setCustomer] = useState({
-    name);
+    name: '',
+    email: '',
+    company: '',
+    phone: '',
+    role: '',
+  });
 
   const [facility, setFacility] = useState({
-    type);
+    type: 'Office',
+    area_m2: 1200,
+    yearBuilt: 2010,
+    floors: 10,
+    occupancy: 300,
+    hours_per_week: 60,
+    location: 'Dubai',
+    utilityProvider: '',
+    meterId: '',
+    bms: { present: false, trending: 'Unknown', vendor: '', version: '', notes: '' },
+    hvac: {
+      systemType: 'Chilled Water',
+      coolingCapacityTR: 500,
+      numChillers: 2,
+      chillerMakeModel: '',
+      boilersPresent: false,
+      boilerFuel: 'Electric',
+      ventilationControl: 'Schedule',
+    },
+    lighting: { predominant: 'LED', controls: ['Manual Switches'] },
+    envelope: { glazing: 'Double', insulationLevel: 'Medium', roofType: '' },
+  });
 
   const [energy, setEnergy] = useState({
-    annual_kwh,
-    annual_cooling_kwh,
-    tariff_aed_per_kwh,
-    emission_factor_kg_per_kwh,
-    carbon_factor_kg_per_kwh,
-    best_possible_eui,
-    gas_annual_mmbtu,
-    diesel_annual_liters,
+    annual_kwh: 180000,
+    annual_cooling_kwh: 0,
+    tariff_aed_per_kwh: 0.35,
+    emission_factor_kg_per_kwh: 0.35,
+    carbon_factor_kg_per_kwh: 0.35,
+    best_possible_eui: 110,
+    gas_annual_mmbtu: 0,
+    diesel_annual_liters: 0,
   });
 
   const [targets, setTargets] = useState({
-    budgetAED,
-    paybackTargetYears,
+    budgetAED: 0,
+    paybackTargetYears: 3,
   });
 
   // Attachments {/* paste S3 keys / URLs */}
@@ -77,7 +78,7 @@ export default function Page() {
 
   // ---------- run / status / results ----------
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState({ kind);
+  const [status, setStatus] = useState({ kind: 'idle' });
   const [result, setResult] = useState(null);
 
   const canRun = useMemo(() => {
@@ -91,7 +92,7 @@ export default function Page() {
   }, [isSessionReady, customer.name, customer.email, facility.area_m2, energy.annual_kwh]);
 
   // ---------- actions ----------
-  function parseFiles(): string[] {
+  function parseFiles(){
     return fileListRaw
       .split('\n')
       .map(s => s.trim())
@@ -101,21 +102,22 @@ export default function Page() {
   async function onRun() {
     if (!canRun) return;
     setBusy(true);
-    setStatus({ kind);
+    setStatus({ kind: 'idle' });
     setResult(null);
 
     const payload= {
       customer,
       facility: {
         ...facility,
-        bms: facility.bms || { present, trending: 'Unknown' },
+        bms: facility.bms || { present: false, trending: 'Unknown' },
         hvac: facility.hvac || {},
         lighting: facility.lighting || {},
         envelope: facility.envelope || {},
       },
       energy: {
         ...energy,
-        carbon_factor_kg_per_kwh,
+        carbon_factor_kg_per_kwh:
+          energy.emission_factor_kg_per_kwh ?? energy.carbon_factor_kg_per_kwh ?? 0.35,
       },
       targets,
     };
@@ -123,14 +125,14 @@ export default function Page() {
     try {
       const data = await runAnalysis({
         sessionId,
-        customerData,
-        files),
+        customerData: payload,
+        files: parseFiles(),
       });
       setResult(data);
-      if (data.ok) setStatus({ kind);
-      else setStatus({ kind)` });
+      if (data.ok) setStatus({ kind: 'ok', msg: 'Analysis complete' });
+      else setStatus({ kind: 'err', msg: data.error || `Request failed (status ${data.status ?? 'unknown'})` });
     } catch (e) {
-      setStatus({ kind);
+      setStatus({ kind: 'err', msg: e?.message || 'Unexpected error' });
     } finally {
       setBusy(false);
     }
@@ -139,7 +141,7 @@ export default function Page() {
   function onNewSession() {
     setSessionId(newSessionId());
     setResult(null);
-    setStatus({ kind);
+    setStatus({ kind: 'idle' });
   }
 
   // ---------- UI ----------
@@ -164,23 +166,23 @@ export default function Page() {
         <div className="grid">
           <div>
             <label>Name *</label>
-            <input value={customer.name} onChange={e => setCustomer({ ...customer, name)} placeholder="Full name" />
+            <input value={customer.name} onChange={e => setCustomer({ ...customer, name: e.target.value })} placeholder="Full name" />
           </div>
           <div>
             <label>Email *</label>
-            <input type="email" value={customer.email} onChange={e => setCustomer({ ...customer, email)} placeholder="name@company.com" />
+            <input type="email" value={customer.email} onChange={e => setCustomer({ ...customer, email: e.target.value })} placeholder="name@company.com" />
           </div>
           <div>
             <label>Company</label>
-            <input value={customer.company || ''} onChange={e => setCustomer({ ...customer, company)} placeholder="(optional)" />
+            <input value={customer.company || ''} onChange={e => setCustomer({ ...customer, company: e.target.value })} placeholder="(optional)" />
           </div>
           <div>
             <label>Phone</label>
-            <input value={customer.phone || ''} onChange={e => setCustomer({ ...customer, phone)} placeholder="+971…" />
+            <input value={customer.phone || ''} onChange={e => setCustomer({ ...customer, phone: e.target.value })} placeholder="+971…" />
           </div>
           <div className="col2">
             <label>Role</label>
-            <input value={customer.role || ''} onChange={e => setCustomer({ ...customer, role)} placeholder="e.g., Facilities Manager" />
+            <input value={customer.role || ''} onChange={e => setCustomer({ ...customer, role: e.target.value })} placeholder="e.g., Facilities Manager" />
           </div>
         </div>
       </div>
@@ -191,48 +193,48 @@ export default function Page() {
         <div className="grid">
           <div>
             <label>Building name</label>
-            <input value={facility.buildingName || ''} onChange={e => setFacility({ ...facility, buildingName)} placeholder="e.g., Test HQ" />
+            <input value={facility.buildingName || ''} onChange={e => setFacility({ ...facility, buildingName: e.target.value })} placeholder="e.g., Test HQ" />
           </div>
           <div>
             <label>Building type</label>
             <select
               value={facility.type}
-              onChange={e => setFacility({ ...facility, type)}
+              onChange={e => setFacility({ ...facility, type: e.target.value'type'] })}
             >
               {['Office','Retail','Hotel','Hospital','School','Warehouse','Residential','Other'].map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
             <label>Year built</label>
-            <input type="number" value={facility.yearBuilt || 0} onChange={e => setFacility({ ...facility, yearBuilt) })} />
+            <input type="number" value={facility.yearBuilt || 0} onChange={e => setFacility({ ...facility, yearBuilt: Number(e.target.value || 0) })} />
           </div>
           <div>
             <label>Area (m²) *</label>
-            <input type="number" value={facility.area_m2} onChange={e => setFacility({ ...facility, area_m2) })} />
+            <input type="number" value={facility.area_m2} onChange={e => setFacility({ ...facility, area_m2: Number(e.target.value || 0) })} />
           </div>
           <div>
             <label>Floors</label>
-            <input type="number" value={facility.floors || 0} onChange={e => setFacility({ ...facility, floors) })} />
+            <input type="number" value={facility.floors || 0} onChange={e => setFacility({ ...facility, floors: Number(e.target.value || 0) })} />
           </div>
           <div>
             <label>Occupancy (persons)</label>
-            <input type="number" value={facility.occupancy || 0} onChange={e => setFacility({ ...facility, occupancy) })} />
+            <input type="number" value={facility.occupancy || 0} onChange={e => setFacility({ ...facility, occupancy: Number(e.target.value || 0) })} />
           </div>
           <div>
             <label>Operating hours (per week)</label>
-            <input type="number" value={facility.hours_per_week || 0} onChange={e => setFacility({ ...facility, hours_per_week) })} />
+            <input type="number" value={facility.hours_per_week || 0} onChange={e => setFacility({ ...facility, hours_per_week: Number(e.target.value || 0) })} />
           </div>
           <div>
             <label>Location (city / emirate)</label>
-            <input value={facility.location || ''} onChange={e => setFacility({ ...facility, location)} />
+            <input value={facility.location || ''} onChange={e => setFacility({ ...facility, location: e.target.value })} />
           </div>
           <div>
             <label>Utility provider</label>
-            <input value={facility.utilityProvider || ''} onChange={e => setFacility({ ...facility, utilityProvider)} />
+            <input value={facility.utilityProvider || ''} onChange={e => setFacility({ ...facility, utilityProvider: e.target.value })} />
           </div>
           <div>
             <label>Meter / Account ID</label>
-            <input value={facility.meterId || ''} onChange={e => setFacility({ ...facility, meterId)} />
+            <input value={facility.meterId || ''} onChange={e => setFacility({ ...facility, meterId: e.target.value })} />
           </div>
         </div>
 
@@ -242,7 +244,7 @@ export default function Page() {
             <label>BMS present?</label>
             <select
               value={String(facility.bms?.present ?? false)}
-              onChange={e => setFacility({ ...facility, bms), present=== 'true' } })}
+              onChange={e => setFacility({ ...facility, bms: { ...(facility.bms||{}), present: e.target.value === 'true' } })}
             >
               <option value="true">Yes</option>
               <option value="false">No</option>
@@ -250,24 +252,24 @@ export default function Page() {
           </div>
           <div>
             <label>BMS vendor</label>
-            <input value={facility.bms?.vendor || ''} onChange={e => setFacility({ ...facility, bms), vendor: e.target.value } })} />
+            <input value={facility.bms?.vendor || ''} onChange={e => setFacility({ ...facility, bms: { ...(facility.bms||{}), vendor: e.target.value } })} />
           </div>
           <div>
             <label>BMS version</label>
-            <input value={facility.bms?.version || ''} onChange={e => setFacility({ ...facility, bms), version: e.target.value } })} />
+            <input value={facility.bms?.version || ''} onChange={e => setFacility({ ...facility, bms: { ...(facility.bms||{}), version: e.target.value } })} />
           </div>
           <div>
             <label>Trending available?</label>
             <select
               value={facility.bms?.trending || 'Unknown'}
-              onChange={e => setFacility({ ...facility, bms), trending: e.target.value } })}
+              onChange={e => setFacility({ ...facility, bms: { ...(facility.bms||{}), trending: e.target.value } })}
             >
               <option>Yes</option><option>No</option><option>Unknown</option>
             </select>
           </div>
           <div className="col2">
             <label>Notes</label>
-            <input value={facility.bms?.notes || ''} onChange={e => setFacility({ ...facility, bms), notes: e.target.value } })} />
+            <input value={facility.bms?.notes || ''} onChange={e => setFacility({ ...facility, bms: { ...(facility.bms||{}), notes: e.target.value } })} />
           </div>
         </div>
 
@@ -277,28 +279,28 @@ export default function Page() {
             <label>System type</label>
             <select
               value={facility.hvac?.systemType || 'Chilled Water'}
-              onChange={e => setFacility({ ...facility, hvac), systemType: e.target.value } })}
+              onChange={e => setFacility({ ...facility, hvac: { ...(facility.hvac||{}), systemType: e.target.value } })}
             >
               {['DX','Chilled Water','VRF','Package Units','District Cooling','Other'].map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
             <label>Cooling capacity (TR)</label>
-            <input type="number" value={facility.hvac?.coolingCapacityTR || 0} onChange={e => setFacility({ ...facility, hvac), coolingCapacityTR: Number(e.target.value || 0) } })} />
+            <input type="number" value={facility.hvac?.coolingCapacityTR || 0} onChange={e => setFacility({ ...facility, hvac: { ...(facility.hvac||{}), coolingCapacityTR: Number(e.target.value || 0) } })} />
           </div>
           <div>
             <label># of chillers</label>
-            <input type="number" value={facility.hvac?.numChillers || 0} onChange={e => setFacility({ ...facility, hvac), numChillers: Number(e.target.value || 0) } })} />
+            <input type="number" value={facility.hvac?.numChillers || 0} onChange={e => setFacility({ ...facility, hvac: { ...(facility.hvac||{}), numChillers: Number(e.target.value || 0) } })} />
           </div>
           <div>
             <label>Chiller make / model</label>
-            <input value={facility.hvac?.chillerMakeModel || ''} onChange={e => setFacility({ ...facility, hvac), chillerMakeModel: e.target.value } })} />
+            <input value={facility.hvac?.chillerMakeModel || ''} onChange={e => setFacility({ ...facility, hvac: { ...(facility.hvac||{}), chillerMakeModel: e.target.value } })} />
           </div>
           <div>
             <label>Boilers present?</label>
             <select
               value={String(facility.hvac?.boilersPresent ?? false)}
-              onChange={e => setFacility({ ...facility, hvac), boilersPresent=== 'true' } })}
+              onChange={e => setFacility({ ...facility, hvac: { ...(facility.hvac||{}), boilersPresent: e.target.value === 'true' } })}
             >
               <option value="true">Yes</option>
               <option value="false">No</option>
@@ -308,7 +310,7 @@ export default function Page() {
             <label>Boiler fuel</label>
             <select
               value={facility.hvac?.boilerFuel || 'Electric'}
-              onChange={e => setFacility({ ...facility, hvac), boilerFuel: e.target.value } })}
+              onChange={e => setFacility({ ...facility, hvac: { ...(facility.hvac||{}), boilerFuel: e.target.value } })}
             >
               {['Gas','Diesel','Electric','None','Other'].map(f => <option key={f} value={f}>{f}</option>)}
             </select>
@@ -317,7 +319,7 @@ export default function Page() {
             <label>Ventilation control</label>
             <select
               value={facility.hvac?.ventilationControl || 'Schedule'}
-              onChange={e => setFacility({ ...facility, hvac), ventilationControl: e.target.value } })}
+              onChange={e => setFacility({ ...facility, hvac: { ...(facility.hvac||{}), ventilationControl: e.target.value } })}
             >
               {['CO2','Schedule','Manual','BMS','Other'].map(f => <option key={f} value={f}>{f}</option>)}
             </select>
@@ -330,7 +332,7 @@ export default function Page() {
             <label>Predominant type</label>
             <select
               value={facility.lighting?.predominant || 'LED'}
-              onChange={e => setFacility({ ...facility, lighting), predominant: e.target.value } })}
+              onChange={e => setFacility({ ...facility, lighting: { ...(facility.lighting||{}), predominant: e.target.value } })}
             >
               {['LED','Fluorescent','HID','Incandescent','Mixed','Other'].map(x => <option key={x} value={x}>{x}</option>)}
             </select>
@@ -342,7 +344,7 @@ export default function Page() {
               value={facility.lighting?.controls || []}
               onChange={e => {
                 const opts = Array.from(e.target.selectedOptions).map(o => o.value)'lighting']['controls'];
-                setFacility({ ...facility, lighting), controls: opts } });
+                setFacility({ ...facility, lighting: { ...(facility.lighting||{}), controls: opts } });
               }}
             >
               {['Manual Switches','Occupancy Sensors','Daylight Sensors','BMS','Timer'].map(x => <option key={x} value={x}>{x}</option>)}
@@ -356,7 +358,7 @@ export default function Page() {
             <label>Glazing</label>
             <select
               value={facility.envelope?.glazing || 'Double'}
-              onChange={e => setFacility({ ...facility, envelope), glazing: e.target.value } })}
+              onChange={e => setFacility({ ...facility, envelope: { ...(facility.envelope||{}), glazing: e.target.value } })}
             >
               {['Single','Double','Triple','Low‑E','Other'].map(x => <option key={x} value={x}>{x}</option>)}
             </select>
@@ -365,14 +367,14 @@ export default function Page() {
             <label>Insulation level</label>
             <select
               value={facility.envelope?.insulationLevel || 'Medium'}
-              onChange={e => setFacility({ ...facility, envelope), insulationLevel: e.target.value } })}
+              onChange={e => setFacility({ ...facility, envelope: { ...(facility.envelope||{}), insulationLevel: e.target.value } })}
             >
               {['Low','Medium','High','Unknown'].map(x => <option key={x} value={x}>{x}</option>)}
             </select>
           </div>
           <div className="col2">
             <label>Roof type</label>
-            <input value={facility.envelope?.roofType || ''} onChange={e => setFacility({ ...facility, envelope), roofType: e.target.value } })} />
+            <input value={facility.envelope?.roofType || ''} onChange={e => setFacility({ ...facility, envelope: { ...(facility.envelope||{}), roofType: e.target.value } })} />
           </div>
         </div>
       </div>
@@ -383,32 +385,32 @@ export default function Page() {
         <div className="grid">
           <div>
             <label>Annual electricity (kWh) *</label>
-            <input type="number" value={energy.annual_kwh} onChange={e => setEnergy({ ...energy, annual_kwh) })} />
+            <input type="number" value={energy.annual_kwh} onChange={e => setEnergy({ ...energy, annual_kwh: Number(e.target.value || 0) })} />
           </div>
           <div>
             <label>Operating tariff (AED/kWh)</label>
-            <input type="number" step="0.01" value={energy.tariff_aed_per_kwh ?? 0} onChange={e => setEnergy({ ...energy, tariff_aed_per_kwh) })} />
+            <input type="number" step="0.01" value={energy.tariff_aed_per_kwh ?? 0} onChange={e => setEnergy({ ...energy, tariff_aed_per_kwh: Number(e.target.value || 0) })} />
           </div>
           <div>
             <label>Emission factor (kg CO₂ / kWh)</label>
-            <input type="number" step="0.001" value={energy.emission_factor_kg_per_kwh ?? 0.35} onChange={e => setEnergy({ ...energy, emission_factor_kg_per_kwh) })} />
+            <input type="number" step="0.001" value={energy.emission_factor_kg_per_kwh ?? 0.35} onChange={e => setEnergy({ ...energy, emission_factor_kg_per_kwh: Number(e.target.value || 0) })} />
           </div>
           <div>
             <label>Best‑possible EUI target (kWh/m²·yr)</label>
-            <input type="number" step="0.1" value={energy.best_possible_eui ?? 110} onChange={e => setEnergy({ ...energy, best_possible_eui) })} />
+            <input type="number" step="0.1" value={energy.best_possible_eui ?? 110} onChange={e => setEnergy({ ...energy, best_possible_eui: Number(e.target.value || 0) })} />
           </div>
 
           <div>
             <label>Cooling electricity (kWh)</label>
-            <input type="number" value={energy.annual_cooling_kwh ?? 0} onChange={e => setEnergy({ ...energy, annual_cooling_kwh) })} />
+            <input type="number" value={energy.annual_cooling_kwh ?? 0} onChange={e => setEnergy({ ...energy, annual_cooling_kwh: Number(e.target.value || 0) })} />
           </div>
           <div>
             <label>Gas (MMBtu / yr)</label>
-            <input type="number" value={energy.gas_annual_mmbtu ?? 0} onChange={e => setEnergy({ ...energy, gas_annual_mmbtu) })} />
+            <input type="number" value={energy.gas_annual_mmbtu ?? 0} onChange={e => setEnergy({ ...energy, gas_annual_mmbtu: Number(e.target.value || 0) })} />
           </div>
           <div>
             <label>Diesel (liters / yr)</label>
-            <input type="number" value={energy.diesel_annual_liters ?? 0} onChange={e => setEnergy({ ...energy, diesel_annual_liters) })} />
+            <input type="number" value={energy.diesel_annual_liters ?? 0} onChange={e => setEnergy({ ...energy, diesel_annual_liters: Number(e.target.value || 0) })} />
           </div>
         </div>
 
@@ -416,8 +418,7 @@ export default function Page() {
           Estimated annual electricity cost:{' '}
           <strong>
             {(energy.tariff_aed_per_kwh || 0) * (energy.annual_kwh || 0)
-              ? ((energy.tariff_aed_per_kwh || 0) * (energy.annual_kwh || 0)).toLocaleString('en-AE', { maximumFractionDigits)
-              : '0.00'}{' '}
+              ? ((energy.tariff_aed_per_kwh || 0) * (energy.annual_kwh || 0)).toLocaleString('en-AE', { maximumFractionDigits: 2 }){' '}
             د.إ
           </strong>
         </div>
@@ -429,19 +430,19 @@ export default function Page() {
         <div className="grid">
           <div className="col2">
             <label>Objectives / Notes</label>
-            <textarea value={targets.objectives || ''} onChange={e => setTargets({ ...targets, objectives)} />
+            <textarea value={targets.objectives || ''} onChange={e => setTargets({ ...targets, objectives: e.target.value })} />
           </div>
           <div className="col2">
             <label>Constraints / Concerns</label>
-            <textarea value={targets.constraints || ''} onChange={e => setTargets({ ...targets, constraints)} />
+            <textarea value={targets.constraints || ''} onChange={e => setTargets({ ...targets, constraints: e.target.value })} />
           </div>
           <div>
             <label>Budget (AED)</label>
-            <input type="number" value={targets.budgetAED ?? 0} onChange={e => setTargets({ ...targets, budgetAED) })} />
+            <input type="number" value={targets.budgetAED ?? 0} onChange={e => setTargets({ ...targets, budgetAED: Number(e.target.value || 0) })} />
           </div>
           <div>
             <label>Payback target (years)</label>
-            <input type="number" step="0.1" value={targets.paybackTargetYears ?? 0} onChange={e => setTargets({ ...targets, paybackTargetYears) })} />
+            <input type="number" step="0.1" value={targets.paybackTargetYears ?? 0} onChange={e => setTargets({ ...targets, paybackTargetYears: Number(e.target.value || 0) })} />
           </div>
         </div>
       </div>
@@ -465,7 +466,9 @@ export default function Page() {
       {/* Status */}
       {status.kind !== 'idle' && (
         <div className="card">
-          <div className={`status ${status.kind === 'ok' ? 'ok' )}
+          <div className={`status ${status.kind === 'ok' ? 'ok' : 'err'}`}>{status.msg}</div>
+        </div>
+      )}
 
       {/* Results */}
       <div className="card" style={{ position: 'relative', overflow: 'hidden' }}>
@@ -480,7 +483,7 @@ export default function Page() {
         )}
         {result && !result.ok && (
           <div className="results error">
-            Error)`}
+            Error: {result.error || `Request failed (status ${result.status ?? 'unknown'})`}
           </div>
         )}
         {!result && <div className="muted">Run analysis to see results here.</div>}
@@ -494,29 +497,29 @@ export default function Page() {
 
       {/* styles */}
       <style jsx>{`
-        .container { max-width; margin; padding; background: #fff; color: #111; }
-        .row { display; align-items; gap; }
-        .header { justify-content: space-between; margin-bottom; }
-        h1 { font-size; margin; }
-        h2 { font-size; margin; }
-        h3 { font-size; margin; color: #111; }
-        .muted { color: #6b7280; font-size; }
-        .btn { background: #0ea5e9; color: #fff; border; padding; border-radius; font-weight; cursor; }
+        .container { max-width: 1050px; margin: 0 auto; padding: 18px; background: #fff; color: #111; }
+        .row { display: flex; align-items: center; gap: 12px; }
+        .header { justify-content: space-between; margin-bottom: 12px; }
+        h1 { font-size: 22px; margin: 0 0 4px; }
+        h2 { font-size: 18px; margin: 0 0 10px; }
+        h3 { font-size: 15px; margin: 8px 0; color: #111; }
+        .muted { color: #6b7280; font-size: 13px; }
+        .btn { background: #0ea5e9; color: #fff; border: none; padding: 8px 14px; border-radius: 9px; font-weight: 600; cursor: pointer; }
         .btn.secondary { background: #e5e7eb; color: #111; }
-        .btn:disabled { opacity; cursor: not-allowed; }
-        .card { border: 1px solid #e5e7eb; border-radius; padding; margin; background: #fff; }
-        .grid { display; grid-template-columns: repeat(2, minmax(0,1fr)); gap; }
-        .grid .col2 { grid-column; }
-        input, select, textarea { width: 100%; border: 1px solid #d1d5db; border-radius; padding; background: #fff; color: #111; }
-        label { display; font-size; color: #374151; margin-bottom; }
-        .status { padding; border-radius; font-weight; }
+        .btn:disabled { opacity: .5; cursor: not-allowed; }
+        .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; margin: 10px 0; background: #fff; }
+        .grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+        .grid .col2 { grid-column: span 2; }
+        input, select, textarea { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px; background: #fff; color: #111; }
+        label { display: block; font-size: 12px; color: #374151; margin-bottom: 4px; }
+        .status { padding: 10px 12px; border-radius: 8px; font-weight: 600; }
         .status.ok { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
         .status.err { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
         .error { color: #991b1b; }
-        .prose :global(p) { margin; }
-        .prose :global(li) { margin; }
-        .watermark { position; inset; pointer-events; opacity; font-weight; font-size; display; align-items; justify-content; transform: rotate(-18deg); }
-        code { background: #f3f4f6; padding; border-radius; }
+        .prose :global(p) { margin: 0 0 12px; }
+        .prose :global(li) { margin: 4px 0; }
+        .watermark { position: absolute; inset: 0; pointer-events: none; opacity: .06; font-weight: 800; font-size: 46px; display: flex; align-items: center; justify-content: center; transform: rotate(-18deg); }
+        code { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }
       `}</style>
     </div>
   );
