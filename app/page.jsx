@@ -418,7 +418,7 @@ export default function Page() {
         <div className="muted" style={{ marginTop: 6 }}>
           Estimated annual electricity cost:{' '}
           <strong>
-            {(((energy.tariff_aed_per_kwh || 0) * (energy.annual_kwh || 0)).toLocaleString('en-AE', { maximumFractionDigits: 2 })}{' '}
+            {(((energy.tariff_aed_per_kwh || 0) * (energy.annual_kwh || 0)).toLocaleString('en-AE', { maximumFractionDigits: 2 }))}{' '}
             د.إ
           </strong>
         </div>
