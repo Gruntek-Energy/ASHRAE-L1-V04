@@ -76,6 +76,11 @@ export default function Page() {
 
   // Attachments {/* paste S3 keys / URLs */}
   const [fileListRaw, setFileListRaw] = useState('');
+  // Upload UI state
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState({});
+
 
   // ---------- run / status / results ----------
   const [busy, setBusy] = useState(false);
@@ -98,6 +103,59 @@ export default function Page() {
       .split('\n')
       .map(s => s.trim())
       .filter(Boolean);
+  }
+
+  
+  async function handleFileChange(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadBusy(true);
+    setUploadMsg(null);
+    setUploadProgress({});
+
+    try {
+      const uploaded = [];
+      for (const f of Array.from(files)) {
+        // Get presigned URL + key from API Gateway
+        const res = await fetch(
+          `https://yuryvu9c3c.execute-api.us-east-1.amazonaws.com?filename=${encodeURIComponent(f.name)}&type=${encodeURIComponent(f.type || 'application/octet-stream')}`
+        );
+        if (!res.ok) throw new Error(`Failed to get signed URL for ${f.name}`);
+        const { url, key } = await res.json();
+
+        // PUT to S3 with progress
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', url);
+          xhr.setRequestHeader('Content-Type', f.type || 'application/octet-stream');
+          xhr.upload.onprogress = evt => {
+            if (evt.lengthComputable) {
+              setUploadProgress(p => ({ ...p, [f.name]: Math.round((evt.loaded / evt.total) * 100) }));
+            }
+          };
+          xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`S3 error ${xhr.status}`)));
+          xhr.onerror = () => reject(new Error('Network error'));
+          xhr.send(f);
+        });
+
+        uploaded.push(key);
+      }
+
+      // Merge keys into textarea (dedupe)
+      const merged = Array.from(new Set([
+        ...fileListRaw.split('\n').map(s => s.trim()).filter(Boolean),
+        ...uploaded
+      ])).join('\n');
+      setFileListRaw(merged);
+      setUploadMsg(`Uploaded ${uploaded.length} file(s).`);
+    } catch (err) {
+      console.error(err);
+      setUploadMsg(err?.message ?? 'Upload failed.');
+    } finally {
+      if (e.target) e.target.value = '';
+      setUploadBusy(false);
+    }
   }
 
   async function onRun() {
@@ -449,20 +507,51 @@ export default function Page() {
 
       {/* Attachments */}
       <div className="card">
-        <h2>Attachments (optional)</h2>
-        <div className="muted" style={{ marginBottom: 8 }}>
-          Paste uploaded S3 keys or file URLs (one per line). Examples:<br />
-          <code>sess_123/asbuilt.pdf</code>, <code>https://…/singleline.pdf</code>
-        </div>
-        <textarea
-          className="col2"
-          rows={4}
-          placeholder="One key or URL per line…"
-          value={fileListRaw}
-          onChange={e => setFileListRaw(e.target.value)}
-        />
-      </div>
+  <h2>Attachments (optional)</h2>
+  <div className="muted" style={{ marginBottom: 8 }}>
+    Paste uploaded S3 keys or file URLs (one per line). Examples:<br />
+    <code>sess_123/asbuilt.pdf</code>, <code>https://…/singleline.pdf</code>
+  </div>
 
+  <textarea
+    className="col2"
+    rows={4}
+    placeholder="One key or URL per line…"
+    value={fileListRaw}
+    onChange={e => setFileListRaw(e.target.value)}
+  />
+
+  {/* Visible file picker */}
+  <div style={{ marginTop: 12 }}>
+    <input
+      type="file"
+      multiple
+      onChange={handleFileChange}
+      disabled={uploadBusy}
+    />
+  </div>
+
+  {/* Progress */}
+  {Object.keys(uploadProgress).length > 0 && (
+    <div style={{ marginTop: 10 }}>
+      {Object.entries(uploadProgress).map(([name, pct]) => (
+        <div key={name} style={{ margin: '6px 0' }}>
+          <div style={{ fontSize: 12 }}>{name}</div>
+          <div style={{ height: 6, background: '#eee', borderRadius: 4 }}>
+            <div style={{ height: 6, width: `${pct}%`, borderRadius: 4, background: '#3b82f6' }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )}
+
+  {/* Status */}
+  {uploadMsg && (
+    <div role="status" aria-live="polite" className="muted" style={{ marginTop: 8 }}>
+      {uploadMsg}
+    </div>
+  )}
+</div>
       {/* Status */}
       {status.kind !== 'idle' && (
         <div className="card">
