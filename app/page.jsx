@@ -203,6 +203,46 @@ export default function Page() {
     setStatus({ kind: 'idle' });
   }
 
+// --- S3 upload helper ---
+const [uploading, setUploading] = useState(false);
+async function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+
+  setUploading(true);
+  try {
+    for (const f of files) {
+      const presign = await fetch(
+        `/api/s3/presign?filename=${encodeURIComponent(f.name)}&type=${encodeURIComponent(
+          f.type || "application/octet-stream"
+        )}&sessionId=${encodeURIComponent(sessionId)}`
+      ).then(r => r.json());
+
+      if (!presign?.uploadUrl || !presign?.key) {
+        throw new Error(presign?.error || "Failed to get upload URL");
+      }
+      // Upload straight to S3
+      await fetch(presign.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": f.type || "application/octet-stream" },
+        body: f,
+      });
+
+      // Append the S3 key into the textarea
+      setFileListRaw(prev =>
+        (prev ? prev + "\n" : "") + presign.key
+      );
+    }
+  } catch (err) {
+    console.error(err);
+    alert((err as any)?.message || "Upload failed");
+  } finally {
+    setUploading(false);
+    // reset the file input so the same file can be selected again if needed
+    e.target.value = "";
+  }
+}
+
   // ---------- UI ----------
   return (
     <div className="container">
@@ -520,6 +560,16 @@ export default function Page() {
     value={fileListRaw}
     onChange={e => setFileListRaw(e.target.value)}
   />
+
+<div style={{ marginTop: 8 }}>
+  <input
+    type="file"
+    multiple
+    onChange={onPickFiles}
+    disabled={!sessionId || uploading}
+  />
+  {uploading && <span className="muted" style={{ marginLeft: 8 }}>Uploading…</span>}
+</div>
 
   {/* Visible file picker */}
   <div style={{ marginTop: 12 }}>
