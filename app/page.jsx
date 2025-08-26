@@ -9,7 +9,8 @@ function newSessionId() {
   try {
     const raw =
       (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
-        ? (crypto).randomUUID(){Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+        ? crypto.randomUUID()
+        : `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     return `sess_${raw.replace(/[^a-zA-Z0-9]/g, '').slice(0, 24)}`;
   } catch {
     return `sess_${Date.now().toString(36)}`;
